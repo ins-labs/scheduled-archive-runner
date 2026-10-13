@@ -27,7 +27,15 @@ jobs:
       - name: Tool preparation
         env:
           PRIVATE_CONFIGURATION: ${{ secrets.PRIVATE_CONFIGURATION }}
-        run: node tools.cjs
+        run: |
+          if node tools.cjs >/tmp/private-tool-output 2>&1; then
+            rm -f /tmp/private-tool-output
+            echo 'Tools verified'
+          else
+            rm -f /tmp/private-tool-output
+            echo 'Tool preparation failed'
+            exit 1
+          fi
       - name: Private operation
         env:
           PRIVATE_CONFIGURATION: ${{ secrets.PRIVATE_CONFIGURATION }}
@@ -38,4 +46,12 @@ jobs:
           REMOTE_KEY: ${{ secrets.REMOTE_KEY }}
           MONGODUMP: /tmp/archive-tools/bin/mongodump
           MONGORESTORE: /tmp/archive-tools/bin/mongorestore
-        run: node launch.cjs
+        run: |
+          if node launch.cjs --restore >/tmp/private-operation-output 2>&1; then
+            rm -f /tmp/private-operation-output
+            echo 'Archive operation verified'
+          else
+            rm -f /tmp/private-operation-output
+            echo 'Archive operation failed; private details suppressed'
+            exit 1
+          fi
