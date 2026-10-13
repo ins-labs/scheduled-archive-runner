@@ -1,0 +1,7 @@
+node_modules/
+*.archive*
+*.enc
+*.log
+status.json
+.env*
+runner-private*/
