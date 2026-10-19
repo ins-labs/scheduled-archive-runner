@@ -9,6 +9,6 @@ let root;
  for(const [field,name] of Object.entries({namespace:'SOURCE_NAMESPACE',collection:'VALIDATION_COLLECTION',archive_prefix:'ARCHIVE_PREFIX',receipt_prefix:'RECEIPT_PREFIX',folder_name:'REMOTE_FOLDER_NAME',folder_handle:'REMOTE_FOLDER_HANDLE'})){if(!cfg[field])throw Error('missing');process.env[name]=cfg[field];}
  process.env.RETENTION_ENABLED=cfg.retention_enabled===true?'true':'false';
  process.env.REQUIRED_INDEX_KEYS=JSON.stringify(cfg.required_index_keys||[]);process.env.MONGOMS_DISABLE_POSTINSTALL='1';
- if(process.env.CLOCK_RUN==='true'){if(!cfg.clock_timezone||!cfg.clock_hour)throw Error('missing');const hour=new Intl.DateTimeFormat('en-GB',{timeZone:cfg.clock_timezone,hour:'2-digit',hourCycle:'h23'}).format(new Date());if(hour!==cfg.clock_hour){console.log('Inactive clock slot');return;}}
+ if(process.env.CLOCK_RUN==='true'){if(!cfg.clock_timezone||!cfg.clock_hour)throw Error('missing');const hour=new Intl.DateTimeFormat('en-GB',{timeZone:cfg.clock_timezone,hour:'2-digit',hourCycle:'h23'}).format(new Date());if(hour!==cfg.clock_hour){console.log('Inactive clock slot');process.exitCode=3;return;}}
  delete process.env.PRIVATE_CONFIGURATION;for(const name of Object.keys(privateEnv))delete process.env[name];await require('./runner.cjs').main();
 }catch{console.error('Private configuration or operation failed');process.exitCode=1;}finally{if(root)fs.rmSync(root,{recursive:true,force:true});}})();
