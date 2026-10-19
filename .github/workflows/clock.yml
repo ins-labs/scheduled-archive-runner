@@ -49,12 +49,22 @@ jobs:
           MONGODUMP: /tmp/archive-tools/bin/mongodump
           MONGORESTORE: /tmp/archive-tools/bin/mongorestore
           CLOCK_RUN: 'true'
+        id: op
         run: |
-          if node launch.cjs >/tmp/private-operation-output 2>&1; then
-            rm -f /tmp/private-operation-output
-            echo 'Archive operation verified'
-          else
-            rm -f /tmp/private-operation-output
-            echo 'Archive operation failed; private details suppressed'
-            exit 1
+          rc=0
+          node launch.cjs >/tmp/private-operation-output 2>&1 || rc=$?
+          rm -f /tmp/private-operation-output
+          if [ "$rc" -eq 3 ]; then
+            echo 'Inactive clock slot'
+            exit 0
           fi
+          if [ "$rc" -eq 0 ]; then
+            echo 'Archive operation verified'
+            echo 'verified=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo 'Archive operation failed; private details suppressed'
+          exit 1
+      - name: Archive operation marker
+        if: steps.op.outputs.verified == 'true'
+        run: echo 'Archive operation marker verified'
