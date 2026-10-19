@@ -1,0 +1,60 @@
+name: Archive clock
+on:
+  schedule:
+    - cron: '30 0 * * *'
+    - cron: '30 1 * * *'
+permissions:
+  contents: read
+concurrency:
+  group: archive-operation
+  cancel-in-progress: false
+jobs:
+  verify:
+    if: vars.RUN_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Locked dependencies
+        env:
+          MONGOMS_DISABLE_POSTINSTALL: '1'
+        run: npm ci --ignore-scripts --omit=dev --silent
+      - name: Synthetic checks
+        run: npm test
+      - name: Tool preparation
+        env:
+          PRIVATE_CONFIGURATION: ${{ secrets.PRIVATE_CONFIGURATION }}
+        run: |
+          if node tools.cjs >/tmp/private-tool-output 2>&1; then
+            rm -f /tmp/private-tool-output
+            echo 'Tools verified'
+          else
+            rm -f /tmp/private-tool-output
+            echo 'Tool preparation failed'
+            exit 1
+          fi
+      - name: Private operation
+        env:
+          PRIVATE_CONFIGURATION: ${{ secrets.PRIVATE_CONFIGURATION }}
+          SOURCE_IDENTITY: ${{ secrets.SOURCE_IDENTITY }}
+          SOURCE_KEY: ${{ secrets.SOURCE_KEY }}
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+          REMOTE_IDENTITY: ${{ secrets.REMOTE_IDENTITY }}
+          REMOTE_KEY: ${{ secrets.REMOTE_KEY }}
+          MONGODUMP: /tmp/archive-tools/bin/mongodump
+          MONGORESTORE: /tmp/archive-tools/bin/mongorestore
+          CLOCK_RUN: 'true'
+        run: |
+          if node launch.cjs >/tmp/private-operation-output 2>&1; then
+            rm -f /tmp/private-operation-output
+            echo 'Archive operation verified'
+          else
+            rm -f /tmp/private-operation-output
+            echo 'Archive operation failed; private details suppressed'
+            exit 1
+          fi
