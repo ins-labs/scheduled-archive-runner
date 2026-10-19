@@ -54,7 +54,7 @@ jobs:
           rc=0
           node launch.cjs >/tmp/private-operation-output 2>&1 || rc=$?
           rm -f /tmp/private-operation-output
-          if [ "$rc" -eq 3 ]; then
+          if [ "$rc" -eq 78 ]; then
             echo 'Inactive clock slot'
             exit 0
           fi
