@@ -1,0 +1,21 @@
+#!/usr/bin/env python3
+"""Test shim for the age binary: reversible, NOT encryption. -r/-i args accepted
+and ignored except -i must name an existing file; -a = ascii armor (prefix/suffix)."""
+import base64, sys
+
+args = sys.argv[1:]
+dec = "-d" in args
+arm = "-a" in args
+if "-i" in args:
+    p = args[args.index("-i") + 1]
+    open(p).read()  # raises if missing -> non-zero exit via traceback
+data = sys.stdin.buffer.read()
+if dec:
+    if arm:
+        data = data.replace(b"AGE-TEST-BEGIN\n", b"").replace(b"\nAGE-TEST-END", b"")
+    out = base64.b64decode(data)
+else:
+    out = base64.b64encode(data)
+    if arm:
+        out = b"AGE-TEST-BEGIN\n" + out + b"\nAGE-TEST-END"
+sys.stdout.buffer.write(out)
