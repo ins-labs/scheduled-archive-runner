@@ -33,12 +33,10 @@ jobs:
       - name: Commit changed snapshot
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GIT_CONFIG_COUNT: 1
-          GIT_CONFIG_KEY_0: http.https://github.com/.extraheader
-          GIT_CONFIG_VALUE_0: AUTHORIZATION: basic placeholder
         run: |
-          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
-          export GIT_CONFIG_VALUE_0
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0="http.https://github.com/.extraheader"
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
           if [ -n "$(git status --porcelain snapshots/)" ]; then
             git config user.name "slot-watch"
             git config user.email "slot-watch@localhost"
