@@ -1,0 +1,18 @@
+name: Fetch probe
+on:
+  workflow_dispatch:
+permissions: {}
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Probe target (identity stays in the secret)
+        env:
+          PROBE_URL: ${{ secrets.FB_PROBE_URL }}
+        run: |
+          if [ -z "$PROBE_URL" ]; then echo "probe: FB_PROBE_URL secret not set"; exit 2; fi
+          echo "default UA:"
+          curl -sS -o /dev/null -m 25 -w 'http=%{http_code} bytes=%{size_download} time=%{time_total}\n' "$PROBE_URL" || echo "curl_rc=$?"
+          echo "browser UA:"
+          curl -sS -o /dev/null -m 25 -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36' -w 'http=%{http_code} bytes=%{size_download} time=%{time_total}\n' "$PROBE_URL" || echo "curl_rc=$?"
