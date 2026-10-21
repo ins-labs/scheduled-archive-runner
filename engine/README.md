@@ -5,33 +5,35 @@ Slot config keys: id, adapter (http-get|command), target, normalize (regex strip
 Snapshot codec (snapshot_codec.py): plain or age (pinned, sha256-verified age binary; recipient in config, identity only via the slot secret). No default codec: a slot must set "codec" explicitly, and "plain" additionally requires "public": true - plain means the content is public on the internet in this repo. Missing/unknown codec = bad_config, exit 2, nothing written. Notifier (notifier.py): generic HTTPS webhook, message = slot id + short hash only, never content. CLI (run_slot_cli.py): runs one slot from SLOT_CONFIG_JSON (per-slot secret SLOT_<n>_CONFIG), commits snapshots/<id>.snap[.age]; prints only the status word. Scheduling: .github/workflows/slot.yml (daily + dispatch, matrix over slot numbers; workflow YAML names no tasks).
 
 ## Example `SLOT_1_CONFIG` (Generic Scheduled Archive Task)
+Main/owner sets the real `SLOT_1_CONFIG` secret in repository secrets; it is never committed to the repository.
+
 ```json
 {
-  "id": "scheduled_archive",
+  "id": "<slot-id>",
   "adapter": "command",
-  "target": "/usr/bin/node launch.cjs",
+  "target": "/usr/bin/env SLOT_1_CONFIG=<slot-1-json> /usr/bin/node launch.cjs",
   "normalize": ["^::add-mask::.*"],
-  "notify": "webhook:https://example.com/webhook-path",
+  "notify": "webhook:<webhook-url>",
   "codec": "age",
-  "age_bin": "/tmp/age/age",
-  "age_recipient": "age1example...",
-  "age_identity": "AGE-SECRET-KEY-1...",
-  "source_host": "db.example.internal:27017",
-  "source_identity": "archive-reader",
-  "source_key": "secret-source-password",
-  "encryption_key": "passphrase-for-backup-encryption",
-  "remote_identity": "storage-account@example.invalid",
-  "remote_key": "storage-account-password",
-  "namespace": "source-db",
-  "collection": "validation-coll",
-  "archive_prefix": "archive-v1-",
-  "receipt_prefix": "archive-state-v1-",
-  "folder_name": "remote-folder",
-  "folder_handle": "remote-handle",
+  "age_bin": "<path-to-age-binary>",
+  "age_recipient": "<age-public-key>",
+  "age_identity": "<age-secret-identity>",
+  "source_host": "<db-host-and-port>",
+  "source_identity": "<source-username>",
+  "source_key": "<source-key>",
+  "encryption_key": "<encryption-passphrase>",
+  "remote_identity": "<remote-email>",
+  "remote_key": "<remote-password>",
+  "namespace": "<source-db-name>",
+  "collection": "<validation-collection>",
+  "archive_prefix": "<archive-prefix>",
+  "receipt_prefix": "<receipt-prefix>",
+  "folder_name": "<remote-folder-name>",
+  "folder_handle": "<remote-folder-handle>",
   "retention_enabled": true,
-  "required_index_keys": ["recordId"],
-  "clock_timezone": "UTC",
-  "clock_hour": "00"
+  "required_index_keys": ["<index-key>"],
+  "clock_timezone": "<timezone>",
+  "clock_hour": "<hour-24h>"
 }
 ```
 
