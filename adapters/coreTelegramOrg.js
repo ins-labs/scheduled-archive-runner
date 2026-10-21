@@ -23,9 +23,8 @@ function normalizeHtml(html) {
 async function coreTelegramOrg(options = {}) {
   const fetchFn = options.fetch || globalThis.fetch;
   const url = options.url || 'https://core.telegram.org/bots/api';
-  const signal = options.signal || AbortSignal.timeout(30000);
 
-  const response = await fetchFn(url, { signal });
+  const response = await fetchFn(url);
   if (!response.ok) {
     throw new Error(`Failed to fetch ${url}: ${response.status} ${response.statusText || ''}`);
   }
