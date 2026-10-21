@@ -27,10 +27,23 @@ jobs:
           curl -sSL -o /tmp/age.tar.gz https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-linux-amd64.tar.gz
           echo "cbe24006683f8eb669266162894b9a522a1af52f2665fbc63a4bb032ed26ac10  /tmp/age.tar.gz" | sha256sum -c -
           tar xzf /tmp/age.tar.gz -C /tmp
+      - name: Snapshot state worktree
+        # Snapshots persist on the unprotected slot-snapshots branch; protected
+        # main rejects direct pushes (GH006). The worktree holds branch state
+        # while the main checkout supplies the engine code.
+        run: |
+          if git ls-remote --exit-code --heads origin slot-snapshots >/dev/null 2>&1; then
+            git fetch origin slot-snapshots
+            git worktree add state slot-snapshots 2>/dev/null || { git worktree add --detach state origin/slot-snapshots && git -C state checkout -b slot-snapshots; }
+          else
+            git worktree add --detach state
+            git -C state checkout -b slot-snapshots
+            mkdir -p state/snapshots
+          fi
       - name: Run slot
         env:
           SLOT_CONFIG_JSON: ${{ secrets[format('SLOT_{0}_CONFIG', matrix.slot)] }}
-          SLOT_STATE_DIR: snapshots
+          SLOT_STATE_DIR: state/snapshots
         run: python3 engine/run_slot_cli.py
       - name: Commit changed snapshot
         env:
@@ -39,17 +52,19 @@ jobs:
           export GIT_CONFIG_COUNT=1
           export GIT_CONFIG_KEY_0="http.https://github.com/.extraheader"
           export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          cd state
           if [ -n "$(git status --porcelain snapshots/)" ]; then
             git config user.name "slot-watch"
             git config user.email "slot-watch@localhost"
             git add snapshots/
             git commit -m "slot ${{ matrix.slot }}: snapshot update"
             ok=0
-            for i in 1 2 3; do
-              git pull --rebase origin main && git push origin HEAD:main && ok=1 && break
+            for i in 1 2 3 4 5; do
+              # pull may fail when the branch does not exist remotely yet (first run)
+              { git pull --rebase origin slot-snapshots 2>/dev/null || true; } && git push origin HEAD:slot-snapshots && ok=1 && break
               sleep 5
             done
-            [ "$ok" = 1 ] || { echo "push failed after 3 attempts"; exit 1; }
+            [ "$ok" = 1 ] || { echo "push failed after 5 attempts"; exit 1; }
           else
             echo "no snapshot change"
           fi
