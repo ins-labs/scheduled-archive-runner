@@ -69,3 +69,11 @@ jobs:
       - name: Archive operation marker
         if: steps.op.outputs.verified == 'true'
         run: echo 'Archive operation marker verified'
+      - name: Notify failure
+        if: failure()
+        env:
+          SLOT_1_CONFIG: ${{ secrets.SLOT_1_CONFIG }}
+          SLOT_2_CONFIG: ${{ secrets.SLOT_2_CONFIG }}
+          SLOT_3_CONFIG: ${{ secrets.SLOT_3_CONFIG }}
+          NOTIFY_MESSAGE: "archive clock: run failed ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        run: python3 tools/notify_failure.py
