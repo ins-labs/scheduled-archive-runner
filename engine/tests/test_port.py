@@ -145,9 +145,10 @@ class CliTest(unittest.TestCase):
 
     def test_slot_3_docs_watch_config_with_cli_adapter(self):
         cli_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "adapters", "cli.js"))
+        cli_script_clean = cli_script.replace('\\', '/')
         mock_runner = os.path.join(self.tmp, "mock_runner.js")
         with open(mock_runner, "w", encoding="utf-8") as f:
-            f.write(f"globalThis.fetch=async()=>({{ok:true,text:async()=>'<h1>Telegram Bot API</h1><p>Mock Docs</p>'}});require('{cli_script.replace('\\\\', '/')}')")
+            f.write(f"globalThis.fetch=async()=>({{ok:true,text:async()=>'<h1>Telegram Bot API</h1><p>Mock Docs</p>'}});require('{cli_script_clean}')")
         cfg = {
             "id": "docs_watch_telegram_api",
             "adapter": "command",
