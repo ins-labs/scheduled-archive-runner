@@ -11,7 +11,7 @@ dependencies:
   rule: "new dependency of any kind needs Sherbo (I-13)"
 tests:
   node: "npm test = node test.cjs && node synthetic.cjs && node test_adapters.cjs && node test_adapters_timeout.cjs && node slot2_probe.test.cjs; synthetic only"
-  python: "cd engine && python3 -m unittest discover -s tests (38 tests green 2026-10-21); NOTE: engine/README.md still says 'cd watch-engine' - stale path"
+  python: "cd engine && python3 -m unittest discover -s tests (33 tests green on main 2026-10-21, +5 notify-failure tests once #26 merges); NOTE: engine/README.md still says 'cd watch-engine' - stale path"
 architecture: "Node runner+adapters / Python watch engine / snapshot state persisted on the unprotected slot-snapshots branch (protected main rejects direct pushes, GH006); per-slot config via secrets SLOT_<n>_CONFIG; slot 2 = phase-0 HTTP probe (status + byte count only)"
 ci:
   runs_on: "HOSTED ubuntu-24.04 allowed - the 2026-10-21 rule (11:56) bans hosted CI only on PRIVATE repos; this repo is PUBLIC. #490 migration to NF cron is schedule ownership, not rule compliance."
