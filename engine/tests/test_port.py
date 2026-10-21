@@ -143,6 +143,30 @@ class CliTest(unittest.TestCase):
         self._run(self._cfg())
         self.assertFalse(os.path.exists(os.path.join(self.tmp, "snap", "t1.fail")))
 
+    def test_slot_3_docs_watch_config_with_cli_adapter(self):
+        cli_script = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "adapters", "cli.js"))
+        cli_script_clean = cli_script.replace('\\', '/')
+        mock_runner = os.path.join(self.tmp, "mock_runner.js")
+        with open(mock_runner, "w", encoding="utf-8") as f:
+            f.write(f"globalThis.fetch=async()=>({{ok:true,text:async()=>'<h1>Telegram Bot API</h1><p>Mock Docs</p>'}});require('{cli_script_clean}')")
+        cfg = {
+            "id": "docs_watch_telegram_api",
+            "adapter": "command",
+            "target": f"/usr/bin/node {mock_runner} coreTelegramOrg",
+            "normalize": [],
+            "notify": "",
+            "codec": "plain",
+            "public": True
+        }
+        if os.path.exists("/usr/bin/node"):
+            ret = self._run(cfg)
+            self.assertEqual(ret, 0)
+            snap_file = os.path.join(self.tmp, "snap", "docs_watch_telegram_api.snap")
+            self.assertTrue(os.path.isfile(snap_file))
+            with open(snap_file, "r", encoding="utf-8") as f:
+                content = f.read()
+            self.assertEqual(content, "Telegram Bot API Mock Docs")
+
 
 if __name__ == "__main__":
     unittest.main()
