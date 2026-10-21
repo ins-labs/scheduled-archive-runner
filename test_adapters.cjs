@@ -132,3 +132,52 @@ test('cli.js adapter CLI entrypoint - githubReleaseFeed with node -e mock fetch'
   assert.equal(res.status, 0, `CLI failed with stderr: ${res.stderr}`);
   assert.equal(res.stdout, 'Tag: v1.9.0\nTitle: v1.9.0 release');
 });
+
+test('cli multi - aggregates sources with headers, one-token spec', () => {
+  const { spawnSync } = require('node:child_process');
+  const path = require('node:path');
+  const cliPath = path.join(__dirname, 'adapters', 'cli.js');
+  const html = '<h1>Bot API</h1><p>Changes here</p>';
+  const atom = '<?xml version="1.0"?><feed><entry><title>v1.2.3</title><id>https://github.com/o/r/releases/tag/v1.2.3</id></entry></feed>';
+  const code = `
+    process.argv = ['node', '${cliPath.replace(/\\/g, '/')}', 'multi', 'coreTelegramOrg:https://core.telegram.org/bots/api|githubReleaseFeed:o:r'];
+    globalThis.fetch = async (url) => ({
+      ok: true,
+      text: async () => (url.includes('telegram') ? ${JSON.stringify(html)} : ${JSON.stringify(atom)})
+    });
+    require('${cliPath.replace(/\\/g, '/')}');
+  `;
+  const res = spawnSync(process.execPath, ['-e', code], { encoding: 'utf8', env: {} });
+  assert.equal(res.status, 0, `CLI failed: ${res.stderr}`);
+  assert.ok(res.stdout.includes('== coreTelegramOrg https://core.telegram.org/bots/api'));
+  assert.ok(res.stdout.includes('Changes here'));
+  assert.ok(res.stdout.includes('== githubReleaseFeed o/r'));
+  assert.ok(res.stdout.includes('v1.2.3'));
+});
+
+test('cli multi - unknown adapter in spec exits nonzero', () => {
+  const { spawnSync } = require('node:child_process');
+  const path = require('node:path');
+  const cliPath = path.join(__dirname, 'adapters', 'cli.js');
+  const code = `
+    process.argv = ['node', '${cliPath.replace(/\\/g, '/')}', 'multi', 'bogus:x'];
+    globalThis.fetch = async () => ({ ok: true, text: async () => '' });
+    require('${cliPath.replace(/\\/g, '/')}');
+  `;
+  const res = spawnSync(process.execPath, ['-e', code], { encoding: 'utf8', env: {} });
+  assert.notEqual(res.status, 0);
+  assert.ok(res.stderr.includes('unknown adapter'));
+});
+
+test('cli multi - empty spec prints nothing and exits 0', () => {
+  const { spawnSync } = require('node:child_process');
+  const path = require('node:path');
+  const cliPath = path.join(__dirname, 'adapters', 'cli.js');
+  const code = `
+    process.argv = ['node', '${cliPath.replace(/\\/g, '/')}', 'multi', ''];
+    globalThis.fetch = async () => ({ ok: true, text: async () => '' });
+    require('${cliPath.replace(/\\/g, '/')}');
+  `;
+  const res = spawnSync(process.execPath, ['-e', code], { encoding: 'utf8', env: {} });
+  assert.equal(res.status, 1, `expected exit 1 (no content), got ${res.status}: ${res.stderr}`);
+});

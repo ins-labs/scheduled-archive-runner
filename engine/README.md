@@ -9,9 +9,9 @@ Snapshot codec (snapshot_codec.py): plain or age (pinned, sha256-verified age bi
 {
   "id": "docs_watch_source",
   "adapter": "command",
-  "target": "/usr/bin/node /path/to/adapters/cli.js coreTelegramOrg https://core.telegram.org/bots/api",
+  "target": "/usr/local/bin/slot-node adapters/cli.js multi coreTelegramOrg:https://core.telegram.org/bots/api|githubReleaseFeed:owner:repo|githubReleaseFeed:owner2:repo2",
   "normalize": [],
-  "notify": "webhook:https://example.com/webhook-path",
+  "notify": "",
   "codec": "plain",
   "public": true
 }
