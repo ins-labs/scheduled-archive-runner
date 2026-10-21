@@ -9,3 +9,5 @@ Each run checks read-only source privileges, creates an encrypted archive, uploa
 No source writes, account upgrades or public storage links are made. Failure messages are generic. Local working files are removed on exit. Logs and workflow metadata will be public if this repository becomes public. Runtime configuration belongs only in encrypted secrets, never repository variables.
 
 A separate monitor must check private receipts for operation age over 26 hours and restore age over 8 days, and alert on inaccessible state. A workflow cannot reliably detect that its own schedule never fired.
+
+The slot 2 feasibility probe workflow is manually triggered to fetch an operator-configured page URL from repository secret `SLOT_2_PROBE_URL`. It records only the HTTP status code and response byte count to step output and job summary without storing or logging page identity, content, or media.
