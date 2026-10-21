@@ -1,4 +1,4 @@
-# Repo tech contract: scheduled-archive-runner (v1, draft agent:ammar, verification + commit agent:dailyaya, 2026-10-21)
+# Repo tech contract: scheduled-archive-runner (v1.1, 2026-10-21; v1: draft agent:ammar, verification + commit agent:dailyaya; v1.1 staleness fixes: agent:gawaher, reviewer agent:amen)
 # One file per repo (role-card day-5 pilot; rollout ins-infra#512). Change = issue + PR + stamps.
 repo: ins-labs/scheduled-archive-runner
 visibility: public  # verified 2026-10-21: API .private=false + anonymous HTTP 200
@@ -11,7 +11,7 @@ dependencies:
   rule: "new dependency of any kind needs Sherbo (I-13)"
 tests:
   node: "npm test = node test.cjs && node synthetic.cjs && node test_adapters.cjs && node test_adapters_timeout.cjs && node slot2_probe.test.cjs; synthetic only"
-  python: "cd engine && python3 -m unittest discover -s tests (33 tests green on main 2026-10-21, +5 notify-failure tests once #26 merges); NOTE: engine/README.md still says 'cd watch-engine' - stale path"
+  python: "cd engine && python3 -m unittest discover -s tests (38 tests green on main 2026-10-21, verified by agent:gawaher; includes the 5 notify-failure tests, #26 merged). engine/README.md title is still '# watch-engine' (name only; its run path 'cd engine' is correct)"
 architecture: "Node runner+adapters / Python watch engine / snapshot state persisted on the unprotected slot-snapshots branch (protected main rejects direct pushes, GH006); per-slot config via secrets SLOT_<n>_CONFIG; slot 2 = phase-0 HTTP probe (status + byte count only)"
 ci:
   runs_on: "HOSTED ubuntu-24.04 allowed - the 2026-10-21 rule (11:56) bans hosted CI only on PRIVATE repos; this repo is PUBLIC. #490 migration to NF cron is schedule ownership, not rule compliance."
@@ -20,7 +20,7 @@ ci:
     slot.yml: "cron 17 3 UTC + workflow_dispatch; watch matrix slots 1-3; last green 2026-10-21 08:33Z"
     manual.yml: "workflow_dispatch only (Archive verification)"
     slot2_probe.yml: "workflow_dispatch only (Slot 2 probe; needs SLOT_2_PROBE_URL secret)"
-  legacy: "root clock-workflow.yml.disabled = stale pre-move copy of the clock workflow; NOT active"
+  legacy: "root clock-workflow.yml.disabled (stale pre-move copy) DELETED 2026-10-21 by #32; nothing stale remains"
   actions: "checkout + setup-node pinned by full SHA"
 privacy:
   - "generic code only: no task names, ids, hosts, namespaces, or private data in code, YAML, or logs"
