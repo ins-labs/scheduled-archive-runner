@@ -55,8 +55,9 @@ async function githubReleaseFeed(repoOrOwner, repoOrOptions, maybeOptions) {
 
   const fetchFn = options.fetch || globalThis.fetch;
   const url = options.feedUrl || options.url || `https://github.com/${owner}/${repo}/releases.atom`;
+  const signal = options.signal || AbortSignal.timeout(30000);
 
-  const response = await fetchFn(url);
+  const response = await fetchFn(url, { signal });
   if (!response.ok) {
     throw new Error(`Failed to fetch ${url}: ${response.status} ${response.statusText || ''}`);
   }

@@ -4,7 +4,7 @@
   "description": "",
   "main": "runner.cjs",
   "scripts": {
-    "test": "node test.cjs && node synthetic.cjs && node test_adapters.cjs"
+    "test": "node test.cjs && node synthetic.cjs && node test_adapters.cjs && node test_adapters_timeout.cjs"
   },
   "keywords": [],
   "author": "",
