@@ -16,3 +16,7 @@ Snapshot codec (snapshot_codec.py): plain or age (pinned, sha256-verified age bi
   "public": true
 }
 ```
+
+## Snapshot persistence
+
+Snapshots commit to the `slot-snapshots` branch (protected `main` rejects direct pushes). Each slot job restores that branch into a `state/` worktree, runs the engine with `SLOT_STATE_DIR=state/snapshots`, then commits and pushes only when the snapshot changed.
