@@ -1,0 +1,30 @@
+# Repo tech contract: scheduled-archive-runner (v1, draft agent:ammar, verification + commit agent:dailyaya, 2026-10-21)
+# One file per repo (role-card day-5 pilot; rollout ins-infra#512). Change = issue + PR + stamps.
+repo: ins-labs/scheduled-archive-runner
+visibility: public  # verified 2026-10-21: API .private=false + anonymous HTTP 200
+runtime:
+  node: "22 CJS runner (runner.cjs, launch.cjs, adapters/*.js, slot2_probe.cjs)"
+  python: "3 stdlib-only watch engine (engine/engine.py, snapshot_codec.py, notifier.py, run_slot_cli.py); floor: CI interpreter governs merged Python syntax"
+dependencies:
+  node: "locked via package-lock.json (megajs 1.3.10, mongodb 6.20.0, mongodb-memory-server 10.2.3); install: npm ci --ignore-scripts --omit=dev with MONGOMS_DISABLE_POSTINSTALL=1; mongodb-memory-server is a devDependencies candidate"
+  python: "stdlib-only; age via pinned sha256-verified binary (recipient in slot config, identity via slot secret only)"
+  rule: "new dependency of any kind needs Sherbo (I-13)"
+tests:
+  node: "npm test = node test.cjs && node synthetic.cjs && node test_adapters.cjs && node test_adapters_timeout.cjs && node slot2_probe.test.cjs; synthetic only"
+  python: "cd engine && python3 -m unittest discover -s tests (33 tests green on main 2026-10-21, +5 notify-failure tests once #26 merges); NOTE: engine/README.md still says 'cd watch-engine' - stale path"
+architecture: "Node runner+adapters / Python watch engine / snapshot state persisted on the unprotected slot-snapshots branch (protected main rejects direct pushes, GH006); per-slot config via secrets SLOT_<n>_CONFIG; slot 2 = phase-0 HTTP probe (status + byte count only)"
+ci:
+  runs_on: "HOSTED ubuntu-24.04 allowed - the 2026-10-21 rule (11:56) bans hosted CI only on PRIVATE repos; this repo is PUBLIC. #490 migration to NF cron is schedule ownership, not rule compliance."
+  workflows:
+    clock.yml: "cron 30 0 + 30 1 UTC + workflow_dispatch; the archive operation; last green 2026-10-21 06:22Z"
+    slot.yml: "cron 17 3 UTC + workflow_dispatch; watch matrix slots 1-3; last green 2026-10-21 08:33Z"
+    manual.yml: "workflow_dispatch only (Archive verification)"
+    slot2_probe.yml: "workflow_dispatch only (Slot 2 probe; needs SLOT_2_PROBE_URL secret)"
+  legacy: "root clock-workflow.yml.disabled = stale pre-move copy of the clock workflow; NOT active"
+  actions: "checkout + setup-node pinned by full SHA"
+privacy:
+  - "generic code only: no task names, ids, hosts, namespaces, or private data in code, YAML, or logs"
+  - "config only in encrypted repo secrets (PRIVATE_CONFIGURATION, SOURCE/REMOTE/ENCRYPTION keys, SLOT_<n>_CONFIG), never repo variables"
+  - "no artifacts/caches; generic failure messages; local temp files removed on exit"
+  - "deadman monitor is separate (host-side): operation age >26h, restore age >8d"
+deploy: "manual + clock triggers only; pruning off by configuration; the retention code path (RETENTION_ENABLED) deletes only files matching the configured archive-name pattern, after verified upload"
