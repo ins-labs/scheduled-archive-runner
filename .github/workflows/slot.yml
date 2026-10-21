@@ -68,3 +68,9 @@ jobs:
           else
             echo "no snapshot change"
           fi
+      - name: Notify failure
+        if: failure()
+        env:
+          SLOT_CONFIG_JSON: ${{ secrets[format('SLOT_{0}_CONFIG', matrix.slot)] }}
+          NOTIFY_MESSAGE: "slot ${{ matrix.slot }}: watch run failed ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        run: python3 tools/notify_failure.py "${{ matrix.slot }}"
