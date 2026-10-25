@@ -267,6 +267,68 @@ class CliTest(unittest.TestCase):
             self.assertEqual(open(snap).read(), "v2")
             self.assertEqual(len(op.requests), 1)
 
+    def test_c3_cli_required_notify_failed_email_sink(self):
+        self._live("v1")
+        c = self._cfg(mode="REQUIRED_NOTIFY", notify="email:a@b")
+        code1, stdout1 = self._run_captured(c)
+        self.assertEqual(code1, 0)
+        self.assertEqual(stdout1, "stored\n")
+        snap = os.path.join(self.tmp, "snap", "t1.snap")
+        self.assertEqual(open(snap).read(), "v1")
+
+        self._live("v2")
+        code2, stdout2 = self._run_captured(c)
+        self.assertEqual(code2, 1)
+        self.assertEqual(stdout2, "notify_failed\n")
+        self.assertEqual(open(snap).read(), "v1")
+
+    def test_c3_cli_required_notify_failed_http_webhook(self):
+        self._live("v1")
+        c = self._cfg(mode="REQUIRED_NOTIFY", notify="webhook:http://example.invalid/hook")
+        code1, stdout1 = self._run_captured(c)
+        self.assertEqual(code1, 0)
+        self.assertEqual(stdout1, "stored\n")
+        snap = os.path.join(self.tmp, "snap", "t1.snap")
+        self.assertEqual(open(snap).read(), "v1")
+
+        self._live("v2")
+        code2, stdout2 = self._run_captured(c)
+        self.assertEqual(code2, 1)
+        self.assertEqual(stdout2, "notify_failed\n")
+        self.assertEqual(open(snap).read(), "v1")
+
+    def test_c3_cli_required_notify_failed_https_webhook_status_500(self):
+        self._live("v1")
+        c = self._cfg(mode="REQUIRED_NOTIFY", notify="webhook:https://example.invalid/hook")
+        op = ConfigurableFakeOpener(status=500)
+        with mock.patch("urllib.request.build_opener", return_value=op):
+            code1, stdout1 = self._run_captured(c)
+            self.assertEqual(code1, 0)
+            self.assertEqual(stdout1, "stored\n")
+
+            self._live("v2")
+            code2, stdout2 = self._run_captured(c)
+            self.assertEqual(code2, 1)
+            self.assertEqual(stdout2, "notify_failed\n")
+            snap = os.path.join(self.tmp, "snap", "t1.snap")
+            self.assertEqual(open(snap).read(), "v1")
+
+    def test_c3_cli_required_notify_failed_https_webhook_oserror(self):
+        self._live("v1")
+        c = self._cfg(mode="REQUIRED_NOTIFY", notify="webhook:https://example.invalid/hook")
+        op = ConfigurableFakeOpener(exc=OSError("transport exception"))
+        with mock.patch("urllib.request.build_opener", return_value=op):
+            code1, stdout1 = self._run_captured(c)
+            self.assertEqual(code1, 0)
+            self.assertEqual(stdout1, "stored\n")
+
+            self._live("v2")
+            code2, stdout2 = self._run_captured(c)
+            self.assertEqual(code2, 1)
+            self.assertEqual(stdout2, "notify_failed\n")
+            snap = os.path.join(self.tmp, "snap", "t1.snap")
+            self.assertEqual(open(snap).read(), "v1")
+
     def test_cli_bad_mode_returns_bad_config_exit_2(self):
         self._live("v1")
         c = self._cfg(mode="INVALID_MODE")
