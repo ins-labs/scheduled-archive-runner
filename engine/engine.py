@@ -11,7 +11,7 @@ MAX_BYTES = 5 * 1024 * 1024
 
 
 class ValidateResult(tuple):
-    """3-tuple (sid, rules, mode) preserving backward compatibility with 2-tuple indexing/unpacking."""
+    """3-tuple (sid, rules, mode) preserving indexing compatibility for sid (index 0) and rules (index 1)."""
     def __new__(cls, sid, rules, mode):
         return super().__new__(cls, (sid, rules, mode))
     @property

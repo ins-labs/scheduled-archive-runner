@@ -192,6 +192,8 @@ class T(unittest.TestCase):
         snap_path = os.path.join(e.d, "slot1.snap")
         with open(snap_path, "r", encoding="utf-8") as f:
             self.assertEqual(f.read(), "a")
+        fail_path = os.path.join(e.d, "slot1.fail")
+        self.assertFalse(os.path.exists(fail_path))
 
     def test_c2_explicit_notify_false_contract_preserved(self):
         c = cfg(mode="REQUIRED_NOTIFY")
