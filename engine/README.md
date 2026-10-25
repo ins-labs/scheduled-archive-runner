@@ -1,7 +1,8 @@
 # watch-engine
 Generic LLM-free diff engine for scheduled watch slots (ins-infra#191, step 1 of #182). Stdlib only, no names or secrets.
 Run tests: `cd engine && python3 -m unittest discover -s tests`.
-Slot config keys: id, adapter (http-get|command), target, normalize (regex strip rules), notify (notifier name), allowed_hosts (required for http-get: non-empty list of hostnames the target and any redirect targets must match, exact and case-insensitive). The command adapter runs the target without a shell: configs are trusted data owned by the operator, never user input.
+Slot config keys: id, adapter (http-get|command), target, normalize (regex strip rules), notify (notifier name), mode (SNAPSHOT_ONLY|REQUIRED_NOTIFY, default SNAPSHOT_ONLY), allowed_hosts (required for http-get: non-empty list of hostnames the target and any redirect targets must match, exact and case-insensitive). The command adapter runs the target without a shell: configs are trusted data owned by the operator, never user input.
+Engine modes: `SNAPSHOT_ONLY` (default/omitted) advances snapshot on content change returning `snapshot_changed` without notifying. `REQUIRED_NOTIFY` requires successful notification delivery to advance snapshot returning `changed`; missing/invalid/failed notification returns `notify_failed` without advancing snapshot.
 Snapshot codec (snapshot_codec.py): plain or age (pinned, sha256-verified age binary; recipient in config, identity only via the slot secret). No default codec: a slot must set "codec" explicitly, and "plain" additionally requires "public": true - plain means the content is public on the internet in this repo. Missing/unknown codec = bad_config, exit 2, nothing written. Notifier (notifier.py): generic HTTPS webhook, message = slot id + short hash only, never content. CLI (run_slot_cli.py): runs one slot from SLOT_CONFIG_JSON (per-slot secret SLOT_<n>_CONFIG), commits snapshots/<id>.snap[.age]; prints only the status word. Scheduling: .github/workflows/slot.yml (daily + dispatch, matrix over slot numbers; workflow YAML names no tasks).
 
 ## Example `SLOT_1_CONFIG` (Generic Scheduled Archive Task)
@@ -14,6 +15,7 @@ Main/owner sets the real `SLOT_1_CONFIG` secret in repository secrets; it is nev
   "target": "/usr/bin/env SLOT_1_CONFIG=<slot-1-json> /usr/bin/node launch.cjs",
   "normalize": ["^::add-mask::.*"],
   "notify": "webhook:<webhook-url>",
+  "mode": "REQUIRED_NOTIFY",
   "codec": "age",
   "age_bin": "<path-to-age-binary>",
   "age_recipient": "<age-public-key>",
@@ -45,6 +47,7 @@ Main/owner sets the real `SLOT_1_CONFIG` secret in repository secrets; it is nev
   "target": "/usr/local/bin/slot-node adapters/cli.js multi coreTelegramOrg:https://core.telegram.org/bots/api|githubReleaseFeed:owner:repo|githubReleaseFeed:owner2:repo2",
   "normalize": [],
   "notify": "",
+  "mode": "SNAPSHOT_ONLY",
   "codec": "plain",
   "public": true
 }

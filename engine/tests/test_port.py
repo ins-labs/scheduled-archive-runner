@@ -1,4 +1,5 @@
 import json, os, stat, sys, tempfile, unittest
+from unittest import mock
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import notifier, snapshot_codec
 
@@ -38,8 +39,13 @@ class CodecTest(unittest.TestCase):
 
 
 class NotifierTest(unittest.TestCase):
-    def test_empty_name_ok_noop(self):
-        self.assertTrue(notifier.notify("", "watch x: changed a -> b"))
+    def test_empty_and_missing_name_returns_false(self):
+        self.assertFalse(notifier.notify("", "watch x: changed a -> b"))
+        self.assertFalse(notifier.notify(None, "watch x: changed a -> b"))
+
+    def test_invalid_sink_types_returns_false(self):
+        for bad in (123, [], {}, True, False):
+            self.assertFalse(notifier.notify(bad, "m"))
 
     def test_unknown_and_non_https_refused(self):
         self.assertFalse(notifier.notify("pagerduty:x", "m"))
@@ -166,6 +172,43 @@ class CliTest(unittest.TestCase):
             with open(snap_file, "r", encoding="utf-8") as f:
                 content = f.read()
             self.assertEqual(content, "Telegram Bot API Mock Docs")
+
+    def test_cli_snapshot_only_persists_snapshot_and_reports_snapshot_changed(self):
+        self._live("v1")
+        c = self._cfg(mode="SNAPSHOT_ONLY")
+        self.assertEqual(self._run(c), 0)
+        snap = os.path.join(self.tmp, "snap", "t1.snap")
+        self.assertEqual(open(snap).read(), "v1")
+        self._live("v2")
+        self.assertEqual(self._run(c), 0)
+        self.assertEqual(open(snap).read(), "v2")
+
+    def test_cli_required_notify_fails_with_invalid_sink_does_not_persist(self):
+        self._live("v1")
+        c = self._cfg(mode="REQUIRED_NOTIFY", notify="")
+        self.assertEqual(self._run(c), 0)
+        snap = os.path.join(self.tmp, "snap", "t1.snap")
+        self.assertEqual(open(snap).read(), "v1")
+        self._live("v2")
+        self.assertEqual(self._run(c), 0)
+        self.assertEqual(open(snap).read(), "v1")
+
+    def test_cli_required_notify_succeeds_with_valid_webhook_and_persists(self):
+        self._live("v1")
+        c = self._cfg(mode="REQUIRED_NOTIFY", notify="webhook:https://example.invalid/hook")
+        with mock.patch("notifier.notify", return_value=True):
+            self.assertEqual(self._run(c), 0)
+            snap = os.path.join(self.tmp, "snap", "t1.snap")
+            self.assertEqual(open(snap).read(), "v1")
+            self._live("v2")
+            self.assertEqual(self._run(c), 0)
+            self.assertEqual(open(snap).read(), "v2")
+
+    def test_cli_bad_mode_returns_bad_config_exit_2(self):
+        self._live("v1")
+        c = self._cfg(mode="INVALID_MODE")
+        self.assertEqual(self._run(c), 2)
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "snap")))
 
 
 if __name__ == "__main__":

@@ -1,10 +1,11 @@
 """Generic LLM-free diff engine for scheduled watch slots. Stdlib only. No names, no secrets in this file or in configs.
 
-run_slot(cfg, state_dir, fetch, notify) -> 'stored' | 'unchanged' | 'changed' | 'fetch_failed' | 'notify_failed' | 'bad_config' | 'error'
+run_slot(cfg, state_dir, fetch, notify) -> 'stored' | 'unchanged' | 'changed' | 'snapshot_changed' | 'fetch_failed' | 'notify_failed' | 'bad_config' | 'error'
 Never raises. Notifications carry the slot id and a short hash only, never the content."""
 import hashlib, json, os, re, select, signal, subprocess, tempfile, time, urllib.parse, urllib.request
 
 ADAPTERS = ("http-get", "command")
+MODES = ("SNAPSHOT_ONLY", "REQUIRED_NOTIFY")
 SLOT_ID = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 MAX_BYTES = 5 * 1024 * 1024
 
@@ -31,6 +32,11 @@ def validate(cfg):
     """Returns (slot_id, compiled normalize rules) or raises ValueError."""
     if not isinstance(cfg, dict) or not SLOT_ID.match(str(cfg.get("id", ""))) or str(cfg["id"]).startswith("."):
         raise ValueError("id")
+    mode = cfg.get("mode")
+    if mode is None:
+        mode = "SNAPSHOT_ONLY"
+    if mode not in MODES:
+        raise ValueError("mode")
     adapter = cfg.get("adapter")
     if adapter not in ADAPTERS or not isinstance(cfg.get("target"), str) or not cfg["target"]:
         raise ValueError("adapter")
@@ -154,6 +160,7 @@ def _write(path, data):
 def run_slot(cfg, state_dir, fetch=default_fetch, notify=None):
     try:
         sid, rules = validate(cfg)
+        mode = cfg.get("mode") or "SNAPSHOT_ONLY"
     except (ValueError, re.error, KeyError, TypeError):
         return "bad_config"
 
@@ -174,9 +181,15 @@ def run_slot(cfg, state_dir, fetch=default_fetch, notify=None):
             raise ValueError("empty response")
     except Exception:
         if _read(fail) is None:                      # report once per transition
-            if notify:
-                if not notify(cfg.get("notify", ""), "watch %s: fetch failed" % sid):
+            if mode == "REQUIRED_NOTIFY":
+                sink = cfg.get("notify", "")
+                if not (notify and notify(sink, "watch %s: fetch failed" % sid)):
                     return "notify_failed"
+                try:
+                    _write(fail, "1")
+                except Exception:
+                    return "error"
+            else:
                 try:
                     _write(fail, "1")
                 except Exception:
@@ -200,8 +213,16 @@ def run_slot(cfg, state_dir, fetch=default_fetch, notify=None):
     if old == cur:
         return "unchanged"
 
+    if mode == "SNAPSHOT_ONLY":
+        try:
+            _write(snap, cur)
+        except Exception:
+            return "error"
+        return "snapshot_changed"
+
     h = lambda t: hashlib.sha256(t.encode()).hexdigest()[:10]
-    if not (notify and notify(cfg.get("notify", ""), "watch %s: changed %s -> %s" % (sid, h(old), h(cur)))):
+    sink = cfg.get("notify", "")
+    if not (notify and notify(sink, "watch %s: changed %s -> %s" % (sid, h(old), h(cur)))):
         return "notify_failed"                        # snapshot untouched: retried next run, not lost
 
     try:

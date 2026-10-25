@@ -3,7 +3,7 @@
 Environment:
   SLOT_CONFIG_JSON  - the full slot config JSON (from the per-slot secret):
                       engine keys (id, adapter, target, normalize, notify,
-                      allowed_hosts) plus codec keys (codec, age_bin,
+                      allowed_hosts, mode) plus codec keys (codec, age_bin,
                       age_recipient, age_identity).
   SLOT_STATE_DIR    - directory holding committed snapshots (default: ./snapshots)
 
@@ -56,7 +56,11 @@ def main():
 
         status = engine.run_slot(cfg, tmp, notify=notifier.notify)
 
-        if status in ("stored", "changed"):
+        if status == "bad_config":
+            print("bad_config")
+            return 2
+
+        if status in ("stored", "changed", "snapshot_changed"):
             try:
                 out = snapshot_codec.encode(open(os.path.join(tmp, sid + ".snap"),
                                                  encoding="utf-8").read(), cfg)
