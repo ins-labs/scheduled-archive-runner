@@ -3,14 +3,15 @@
 Environment:
   SLOT_CONFIG_JSON  - the full slot config JSON (from the per-slot secret):
                       engine keys (id, adapter, target, normalize, notify,
-                      allowed_hosts) plus codec keys (codec, age_bin,
+                      allowed_hosts, mode) plus codec keys (codec, age_bin,
                       age_recipient, age_identity).
   SLOT_STATE_DIR    - directory holding committed snapshots (default: ./snapshots)
 
 Behaviour: decrypts the stored snapshot (if encrypted) into a private temp
 state dir, runs the audited engine against it, and re-encrypts when the
 snapshot changed. Prints ONLY the engine status word. Exit 0 always except a
-missing/invalid config (exit 2), so one bad slot never fails the matrix.
+missing/invalid config (exit 2) or notify_failed (exit 1), so one bad slot
+never fails the matrix.
 """
 import json, os, sys, tempfile
 
@@ -56,7 +57,11 @@ def main():
 
         status = engine.run_slot(cfg, tmp, notify=notifier.notify)
 
-        if status in ("stored", "changed"):
+        if status == "bad_config":
+            print("bad_config")
+            return 2
+
+        if status in ("stored", "changed", "snapshot_changed"):
             try:
                 out = snapshot_codec.encode(open(os.path.join(tmp, sid + ".snap"),
                                                  encoding="utf-8").read(), cfg)
@@ -74,7 +79,10 @@ def main():
             open(failmark, "w").write("1")
         elif os.path.isfile(failmark):
             os.unlink(failmark)
+
     print(status)
+    if status == "notify_failed":
+        return 1
     return 0
 
 
