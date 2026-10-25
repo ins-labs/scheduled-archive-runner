@@ -10,7 +10,8 @@ Environment:
 Behaviour: decrypts the stored snapshot (if encrypted) into a private temp
 state dir, runs the audited engine against it, and re-encrypts when the
 snapshot changed. Prints ONLY the engine status word. Exit 0 always except a
-missing/invalid config (exit 2), so one bad slot never fails the matrix.
+missing/invalid config (exit 2) or notify_failed (exit 1), so one bad slot
+never fails the matrix.
 """
 import json, os, sys, tempfile
 
@@ -78,7 +79,10 @@ def main():
             open(failmark, "w").write("1")
         elif os.path.isfile(failmark):
             os.unlink(failmark)
+
     print(status)
+    if status == "notify_failed":
+        return 1
     return 0
 
 

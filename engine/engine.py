@@ -10,6 +10,18 @@ SLOT_ID = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 MAX_BYTES = 5 * 1024 * 1024
 
 
+class ValidateResult(tuple):
+    """3-tuple (sid, rules, mode) preserving backward compatibility with 2-tuple indexing/unpacking."""
+    def __new__(cls, sid, rules, mode):
+        return super().__new__(cls, (sid, rules, mode))
+    @property
+    def sid(self): return self[0]
+    @property
+    def rules(self): return self[1]
+    @property
+    def mode(self): return self[2]
+
+
 class HTTPSOnlyRedirectHandler(urllib.request.HTTPRedirectHandler):
     def __init__(self, allowed_hosts=None):
         super().__init__()
@@ -29,14 +41,15 @@ class HTTPSOnlyRedirectHandler(urllib.request.HTTPRedirectHandler):
 
 
 def validate(cfg):
-    """Returns (slot_id, compiled normalize rules) or raises ValueError."""
+    """Returns ValidateResult(slot_id, compiled normalize rules, mode) or raises ValueError."""
     if not isinstance(cfg, dict) or not SLOT_ID.match(str(cfg.get("id", ""))) or str(cfg["id"]).startswith("."):
         raise ValueError("id")
-    mode = cfg.get("mode")
-    if mode is None:
+    if "mode" not in cfg:
         mode = "SNAPSHOT_ONLY"
-    if mode not in MODES:
-        raise ValueError("mode")
+    else:
+        mode = cfg["mode"]
+        if mode not in MODES:
+            raise ValueError("mode")
     adapter = cfg.get("adapter")
     if adapter not in ADAPTERS or not isinstance(cfg.get("target"), str) or not cfg["target"]:
         raise ValueError("adapter")
@@ -52,7 +65,7 @@ def validate(cfg):
     rules = cfg.get("normalize", [])
     if not isinstance(rules, list) or len(rules) > 50:
         raise ValueError("normalize")
-    return cfg["id"], [re.compile(r) for r in rules]
+    return ValidateResult(cfg["id"], [re.compile(r) for r in rules], mode)
 
 
 def default_fetch(cfg, timeout=60):
@@ -159,8 +172,7 @@ def _write(path, data):
 
 def run_slot(cfg, state_dir, fetch=default_fetch, notify=None):
     try:
-        sid, rules = validate(cfg)
-        mode = cfg.get("mode") or "SNAPSHOT_ONLY"
+        sid, rules, mode = validate(cfg)
     except (ValueError, re.error, KeyError, TypeError):
         return "bad_config"
 

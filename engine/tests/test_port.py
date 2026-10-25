@@ -1,9 +1,25 @@
-import json, os, stat, sys, tempfile, unittest
+import io, json, os, stat, sys, tempfile, unittest
 from unittest import mock
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import notifier, snapshot_codec
 
 FAKE_AGE = os.path.join(os.path.dirname(__file__), "fake_age")
+
+
+class ConfigurableFakeOpener:
+    def __init__(self, status=200, exc=None):
+        self.status = status
+        self.exc = exc
+        self.requests = []
+    def open(self, req, timeout=30):
+        self.requests.append(req)
+        if self.exc:
+            raise self.exc
+        class Resp:
+            def __init__(self, status): self.status = status
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+        return Resp(self.status)
 
 
 class CodecTest(unittest.TestCase):
@@ -52,26 +68,20 @@ class NotifierTest(unittest.TestCase):
         self.assertFalse(notifier.notify("webhook:http://insecure/hook", "m"))
 
     def test_webhook_posts_json(self):
-        class R:
-            status = 200
-            def __enter__(self): return self
-            def __exit__(self, *a): return False
-        seen = {}
-        class Op:
-            def open(self, req, timeout=0):
-                seen["url"] = req.full_url
-                seen["body"] = req.data.decode()
-                return R()
-        ok = notifier.notify("webhook:https://hooks.example/t", "watch slot1: changed aaa -> bbb", opener=Op())
+        op = ConfigurableFakeOpener(status=200)
+        ok = notifier.notify("webhook:https://hooks.example/t", "watch slot1: changed aaa -> bbb", opener=op)
         self.assertTrue(ok)
-        self.assertIn("slot1", seen["body"])
-        self.assertTrue(seen["url"].startswith("https://"))
+        self.assertEqual(len(op.requests), 1)
+        self.assertEqual(op.requests[0].full_url, "https://hooks.example/t")
+        self.assertIn("slot1", op.requests[0].data.decode())
 
     def test_webhook_failure_returns_false(self):
-        class Op:
-            def open(self, req, timeout=0):
-                raise OSError("down")
-        self.assertFalse(notifier.notify("webhook:https://hooks.example/t", "m", opener=Op()))
+        op = ConfigurableFakeOpener(exc=OSError("down"))
+        self.assertFalse(notifier.notify("webhook:https://hooks.example/t", "m", opener=op))
+
+    def test_non_2xx_returns_false(self):
+        op = ConfigurableFakeOpener(status=500)
+        self.assertFalse(notifier.notify("webhook:https://hooks.example/t", "m", opener=op))
 
 
 class CliTest(unittest.TestCase):
@@ -88,6 +98,18 @@ class CliTest(unittest.TestCase):
         os.environ["SLOT_STATE_DIR"] = os.path.join(self.tmp, "snap")
         return run_slot_cli.main()
 
+    def _run_captured(self, cfg_or_raw):
+        import run_slot_cli
+        if isinstance(cfg_or_raw, str):
+            os.environ["SLOT_CONFIG_JSON"] = cfg_or_raw
+        else:
+            os.environ["SLOT_CONFIG_JSON"] = json.dumps(cfg_or_raw)
+        os.environ["SLOT_STATE_DIR"] = os.path.join(self.tmp, "snap")
+        out = io.StringIO()
+        with mock.patch("sys.stdout", out):
+            code = run_slot_cli.main()
+        return code, out.getvalue()
+
     def _cfg(self, **kw):
         c = {"id": "t1", "adapter": "command", "target": "/bin/cat " + os.path.join(self.tmp, "live.txt"),
              "notify": "", "codec": "plain", "public": True}
@@ -98,17 +120,21 @@ class CliTest(unittest.TestCase):
             f.write(text)
 
     def test_skip_without_config(self):
-        os.environ["SLOT_CONFIG_JSON"] = ""
-        import run_slot_cli
-        self.assertEqual(run_slot_cli.main(), 0)
+        code, stdout = self._run_captured("")
+        self.assertEqual(code, 0)
+        self.assertEqual(stdout, "skip: slot not configured\n")
 
     def test_plain_cycle_stores_then_unchanged_then_changed(self):
         self._live("v1")
-        self.assertEqual(self._run(self._cfg()), 0)
+        code, stdout = self._run_captured(self._cfg())
+        self.assertEqual(code, 0)
+        self.assertEqual(stdout, "stored\n")
         snap = os.path.join(self.tmp, "snap", "t1.snap")
         self.assertEqual(open(snap).read(), "v1")
         self._live("v2")
-        self._run(self._cfg())
+        code, stdout = self._run_captured(self._cfg())
+        self.assertEqual(code, 0)
+        self.assertEqual(stdout, "snapshot_changed\n")
         self.assertEqual(open(snap).read(), "v2")
 
     def test_age_cycle_commits_ciphertext_only(self):
@@ -124,23 +150,25 @@ class CliTest(unittest.TestCase):
         self.assertNotEqual(committed, committed2)
 
     def test_missing_codec_fails_closed(self):
-        # no codec in config: CLI returns 2 and writes nothing
         self._live("x")
         c = self._cfg()
         del c["codec"]
-        self.assertEqual(self._run(c), 2)
+        code, stdout = self._run_captured(c)
+        self.assertEqual(code, 2)
+        self.assertEqual(stdout, "bad_config\n")
         self.assertFalse(os.path.exists(os.path.join(self.tmp, "snap")))
 
     def test_plain_without_public_fails_closed(self):
         self._live("x")
         c = self._cfg()
         del c["public"]
-        self.assertEqual(self._run(c), 2)
+        code, stdout = self._run_captured(c)
+        self.assertEqual(code, 2)
+        self.assertEqual(stdout, "bad_config\n")
         self.assertFalse(os.path.exists(os.path.join(self.tmp, "snap")))
 
     def test_fail_marker_persists_across_runs(self):
         c = self._cfg(target="/bin/cat " + os.path.join(self.tmp, "missing.txt"))
-        # fetch fails both runs (notify is a no-op); the marker must persist across runs
         self._run(c)
         self.assertTrue(os.path.isfile(os.path.join(self.tmp, "snap", "t1.fail")))
         self._run(c)
@@ -165,8 +193,9 @@ class CliTest(unittest.TestCase):
             "public": True
         }
         if os.path.exists("/usr/bin/node"):
-            ret = self._run(cfg)
-            self.assertEqual(ret, 0)
+            code, stdout = self._run_captured(cfg)
+            self.assertEqual(code, 0)
+            self.assertEqual(stdout, "stored\n")
             snap_file = os.path.join(self.tmp, "snap", "docs_watch_telegram_api.snap")
             self.assertTrue(os.path.isfile(snap_file))
             with open(snap_file, "r", encoding="utf-8") as f:
@@ -176,38 +205,74 @@ class CliTest(unittest.TestCase):
     def test_cli_snapshot_only_persists_snapshot_and_reports_snapshot_changed(self):
         self._live("v1")
         c = self._cfg(mode="SNAPSHOT_ONLY")
-        self.assertEqual(self._run(c), 0)
+        code1, stdout1 = self._run_captured(c)
+        self.assertEqual(code1, 0)
+        self.assertEqual(stdout1, "stored\n")
         snap = os.path.join(self.tmp, "snap", "t1.snap")
         self.assertEqual(open(snap).read(), "v1")
         self._live("v2")
-        self.assertEqual(self._run(c), 0)
+        code2, stdout2 = self._run_captured(c)
+        self.assertEqual(code2, 0)
+        self.assertEqual(stdout2, "snapshot_changed\n")
         self.assertEqual(open(snap).read(), "v2")
 
-    def test_cli_required_notify_fails_with_invalid_sink_does_not_persist(self):
+    def test_c1_cli_omitted_mode_defaults_snapshot_only(self):
+        self._live("v1")
+        c = self._cfg() # mode key omitted
+        code1, stdout1 = self._run_captured(c)
+        self.assertEqual(code1, 0)
+        self.assertEqual(stdout1, "stored\n")
+        self._live("v2")
+        code2, stdout2 = self._run_captured(c)
+        self.assertEqual(code2, 0)
+        self.assertEqual(stdout2, "snapshot_changed\n")
+
+    def test_c1_cli_explicit_null_mode_returns_bad_config_exit_2(self):
+        self._live("v1")
+        raw = json.dumps(self._cfg(mode=None))
+        code, stdout = self._run_captured(raw)
+        self.assertEqual(code, 2)
+        self.assertEqual(stdout, "bad_config\n")
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "snap")))
+
+    def test_c3_cli_notify_failed_returns_exit_1_exact_stdout_no_persistence(self):
         self._live("v1")
         c = self._cfg(mode="REQUIRED_NOTIFY", notify="")
-        self.assertEqual(self._run(c), 0)
+        code1, stdout1 = self._run_captured(c)
+        self.assertEqual(code1, 0)
+        self.assertEqual(stdout1, "stored\n")
         snap = os.path.join(self.tmp, "snap", "t1.snap")
         self.assertEqual(open(snap).read(), "v1")
-        self._live("v2")
-        self.assertEqual(self._run(c), 0)
-        self.assertEqual(open(snap).read(), "v1")
 
-    def test_cli_required_notify_succeeds_with_valid_webhook_and_persists(self):
+        self._live("v2")
+        code2, stdout2 = self._run_captured(c)
+        self.assertEqual(code2, 1) # Exit 1 for notify_failed!
+        self.assertEqual(stdout2, "notify_failed\n")
+        self.assertEqual(open(snap).read(), "v1") # Snapshot file retained as v1!
+
+    def test_c3_cli_required_notify_succeeds_with_real_notifier_and_fake_opener(self):
         self._live("v1")
         c = self._cfg(mode="REQUIRED_NOTIFY", notify="webhook:https://example.invalid/hook")
-        with mock.patch("notifier.notify", return_value=True):
-            self.assertEqual(self._run(c), 0)
-            snap = os.path.join(self.tmp, "snap", "t1.snap")
-            self.assertEqual(open(snap).read(), "v1")
+        op = ConfigurableFakeOpener(status=200)
+        with mock.patch("urllib.request.build_opener", return_value=op):
+            code1, stdout1 = self._run_captured(c)
+            self.assertEqual(code1, 0)
+            self.assertEqual(stdout1, "stored\n")
+
             self._live("v2")
-            self.assertEqual(self._run(c), 0)
+            code2, stdout2 = self._run_captured(c)
+            self.assertEqual(code2, 0)
+            self.assertEqual(stdout2, "changed\n")
+            snap = os.path.join(self.tmp, "snap", "t1.snap")
             self.assertEqual(open(snap).read(), "v2")
+            self.assertEqual(len(op.requests), 1)
 
     def test_cli_bad_mode_returns_bad_config_exit_2(self):
         self._live("v1")
         c = self._cfg(mode="INVALID_MODE")
-        self.assertEqual(self._run(c), 2)
+        code, stdout = self._run_captured(c)
+        self.assertEqual(code, 2)
+        self.assertEqual(stdout, "bad_config\n")
         self.assertFalse(os.path.exists(os.path.join(self.tmp, "snap")))
 
 
