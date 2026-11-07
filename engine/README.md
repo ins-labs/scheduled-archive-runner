@@ -1,3 +1,6 @@
+> **Required reading before repository work:** [NATIVE-PUSH-TO-DEPLOY.md](../NATIVE-PUSH-TO-DEPLOY.md).
+> Current operating instruction: this policy supersedes conflicting runner, CI and deployment guidance below. Retained legacy procedures are not the native execution route. Native Northflank test/staging applications do not require Actions runners; qualify before a deliberate production main push, not again on main. Current slot route: native buildpacks triggered by intended branch pushes, not manual image selection.
+
 # watch-engine
 Generic LLM-free diff engine for scheduled watch slots (ins-infra#191, step 1 of #182). Stdlib only, no names or secrets.
 Run tests: `cd engine && python3 -m unittest discover -s tests`.
