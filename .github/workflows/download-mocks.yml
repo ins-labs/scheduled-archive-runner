@@ -1,0 +1,31 @@
+name: Download handling mock validation
+on:
+  push:
+    branches:
+      - 'test/43-download-mocks-20261108'
+permissions:
+  contents: read
+concurrency:
+  group: download-handling-mock-validation
+  cancel-in-progress: false
+jobs:
+  mocks:
+    # One exact isolated branch only, not production main or untrusted PR code.
+    if: github.ref == 'refs/heads/test/43-download-mocks-20261108' && github.event.deleted == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out selected reviewed source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Verify selected event head is checked out
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+      - name: Run only four mocked download boundary checks
+        env:
+          PYTHONNOUSERSITE: '1'
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 -I tests/test_download_age.py
