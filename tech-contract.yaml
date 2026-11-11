@@ -6,7 +6,7 @@ runtime:
   node: "22 CJS runner (runner.cjs, launch.cjs, adapters/*.js, slot2_probe.cjs)"
   python: "3 stdlib-only watch engine (engine/engine.py, snapshot_codec.py, notifier.py, run_slot_cli.py); floor: CI interpreter governs merged Python syntax"
 dependencies:
-  node: "locked via package-lock.json (megajs 1.3.10, mongodb 6.20.0, mongodb-memory-server 10.2.3); install: npm ci --ignore-scripts --omit=dev with MONGOMS_DISABLE_POSTINSTALL=1; mongodb-memory-server is a devDependencies candidate"
+  node: "SOURCE CANDIDATE ONLY: package.json requests megajs 1.3.10, mongodb 7.8.0, mongodb-memory-server 10.2.3; package-lock.json still pins direct mongodb 6.20.0 and must be regenerated/reviewed before installation or qualification. Intended install after lock completion: npm ci --ignore-scripts --omit=dev with MONGOMS_DISABLE_POSTINSTALL=1; mongodb-memory-server remains a runtime dependency used by restore."
   python: "stdlib-only; age via pinned sha256-verified binary (recipient in slot config, identity via slot secret only)"
   rule: "new dependency of any kind needs Sherbo (I-13)"
 tests:

@@ -1,0 +1,17 @@
+{
+  "name": "scheduled-archive-runner",
+  "version": "1.0.0",
+  "description": "",
+  "main": "runner.cjs",
+  "scripts": {
+    "test": "node test.cjs && node synthetic.cjs && node test_adapters.cjs && node test_adapters_timeout.cjs && node slot2_probe.test.cjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "megajs": "1.3.10",
+    "mongodb": "7.8.0",
+    "mongodb-memory-server": "10.2.3"
+  }
+}
