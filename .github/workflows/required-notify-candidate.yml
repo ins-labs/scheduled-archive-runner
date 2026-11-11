@@ -16,17 +16,80 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 1
-      - name: Bind source and prerequisites
+      - name: Named source and prerequisite diagnostics
         env:
           EXPECTED_HEAD: ${{ github.sha }}
+          EXPECTED_REF: ${{ github.ref }}
+          QUALIFY_RUN_ID: ${{ github.run_id }}
+          QUALIFY_RUN_ATTEMPT: ${{ github.run_attempt }}
+          QUALIFY_JOB: ${{ github.job }}
+        shell: bash
         run: |
-          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
-          git diff --check
-          test -x engine/tests/fake_age
-          test -x /usr/bin/node
-          python3 --version
-          /usr/bin/node --version
-          git rev-parse HEAD HEAD^{tree}
+          mkdir -p qualification-prerequisites
+          printf '%s\n' '{"phase":"diagnostic-bootstrap","test_status":"NOT_RUN","qualification_pass":false,"terminal_rc":1}' > qualification-prerequisites/bootstrap.json
+          python3 -I - <<'PY'
+          import hashlib, json, os, pathlib, shutil, stat, subprocess, sys
+          out = pathlib.Path('qualification-prerequisites')
+          receipt = {'phase': 'prerequisites', 'test_status': 'NOT_RUN', 'qualification_pass': False,
+                     'terminal_rc': 1, 'run_id': os.environ['QUALIFY_RUN_ID'],
+                     'attempt': os.environ['QUALIFY_RUN_ATTEMPT'], 'job': os.environ['QUALIFY_JOB'],
+                     'expected_head': os.environ['EXPECTED_HEAD'], 'expected_ref': os.environ['EXPECTED_REF'], 'checks': []}
+          def save():
+              (out/'receipt.json').write_text(json.dumps(receipt, indent=2)+'\n')
+          save()
+          def check(name, command, expected=None):
+              result = subprocess.run(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+              stdout, stderr = result.stdout, result.stderr
+              (out/(name+'.stdout')).write_text(stdout)
+              (out/(name+'.stderr')).write_text(stderr)
+              ok = result.returncode == 0 and (expected is None or stdout.strip() == expected)
+              receipt['checks'].append({'name':name, 'command':command, 'rc':result.returncode,
+                                        'expected':expected, 'observed':stdout.strip(), 'accepted':ok})
+              save()
+              return ok
+          # This workflow-owned receipt runs before any repository test entry.
+          # A failed head/ref check must not execute the untrusted/wrong entry.
+          try:
+              identity = check('head', ['git','rev-parse','HEAD'], receipt['expected_head'])
+              identity = check('ref', ['git','symbolic-ref','--quiet','HEAD'], receipt['expected_ref']) and identity
+              if not identity:
+                  receipt['failure'] = 'identity'; save(); raise SystemExit(1)
+              checks = [check('diff-check',['git','diff','--check']),
+                        check('tracked-clean',['git','status','--porcelain','--untracked-files=no'], '')]
+              for name, path in [('fake-age','engine/tests/fake_age'), ('node','/usr/bin/node')]:
+                  p = pathlib.Path(path)
+                  exists = p.is_file()
+                  mode = stat.S_IMODE(p.stat().st_mode) if exists else None
+                  data = p.read_bytes() if exists and name == 'fake-age' else b''
+                  receipt['checks'].append({'name':name+'-metadata', 'path':path, 'exists':exists,
+                      'mode':oct(mode) if mode is not None else None, 'executable':os.access(p,os.X_OK),
+                      'shebang':data.splitlines()[0].decode('utf-8','replace') if data else None,
+                      'sha256':hashlib.sha256(data).hexdigest() if data else None,
+                      'accepted':exists and os.access(p,os.X_OK)})
+                  checks.append(exists and os.access(p,os.X_OK)); save()
+              # Only interpreter lookup facts, never a whole environment dump.
+              receipt['interpreters'] = {'python3':shutil.which('python3'), 'node':shutil.which('node')}
+              save()
+              checks.append(check('python-version',[sys.executable,'--version']))
+              if pathlib.Path('/usr/bin/node').is_file() and os.access('/usr/bin/node',os.X_OK):
+                  checks.append(check('node-version',['/usr/bin/node','--version']))
+              else:
+                  checks.append(False)
+              receipt['accepted'] = all(checks)
+              receipt['terminal_rc'] = 0 if all(checks) else 1
+              receipt['failure'] = None if all(checks) else 'named-prerequisite'
+              save()
+          except SystemExit:
+              raise
+          except BaseException as exc:
+              receipt['failure'] = 'diagnostic-exception:'+type(exc).__name__; save(); raise
+          finally:
+              manifest = {p.name:{'bytes':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()}
+                          for p in sorted(out.iterdir()) if p.is_file() and p.name != 'MANIFEST.json'}
+              (out/'MANIFEST.json').write_text(json.dumps(manifest,indent=2)+'\n')
+              print('PREREQUISITE_RECEIPT '+json.dumps(receipt,sort_keys=True))
+          raise SystemExit(receipt['terminal_rc'])
+          PY
       - name: Isolated 64-case census and run
         env:
           PYTHONNOUSERSITE: '1'
@@ -36,12 +99,13 @@ jobs:
           QUALIFY_JOB: ${{ github.job }}
         run: |
           env -i PATH=/usr/bin:/bin HOME="$RUNNER_TEMP" PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1 QUALIFY_RUN_ID="$QUALIFY_RUN_ID" QUALIFY_RUN_ATTEMPT="$QUALIFY_RUN_ATTEMPT" QUALIFY_JOB="$QUALIFY_JOB" python3 -I tools/qualify_required_notify.py
-      - name: Retain complete fixture evidence
+      - name: Retain complete fixture or prerequisite evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: required-notify-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
+            qualification-prerequisites/
             qualification-evidence.tar.gz
             qualification-evidence.sha256
           if-no-files-found: error
