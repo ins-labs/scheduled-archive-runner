@@ -1,0 +1,49 @@
+name: Required notification candidate checks
+on:
+  push:
+    branches: ['test/45-required-notify-qualification']
+permissions:
+  contents: read
+concurrency:
+  group: required-notify-candidate
+  cancel-in-progress: false
+jobs:
+  isolated:
+    if: github.ref == 'refs/heads/test/45-required-notify-qualification' && github.event.deleted == false
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Bind source and prerequisites
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          git diff --check
+          test -x engine/tests/fake_age
+          test -x /usr/bin/node
+          python3 --version
+          /usr/bin/node --version
+          git rev-parse HEAD HEAD^{tree}
+      - name: Isolated 64-case census and run
+        env:
+          PYTHONNOUSERSITE: '1'
+          PYTHONDONTWRITEBYTECODE: '1'
+          QUALIFY_RUN_ID: ${{ github.run_id }}
+          QUALIFY_RUN_ATTEMPT: ${{ github.run_attempt }}
+          QUALIFY_JOB: ${{ github.job }}
+        run: |
+          env -i PATH=/usr/bin:/bin HOME="$RUNNER_TEMP" PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1 QUALIFY_RUN_ID="$QUALIFY_RUN_ID" QUALIFY_RUN_ATTEMPT="$QUALIFY_RUN_ATTEMPT" QUALIFY_JOB="$QUALIFY_JOB" python3 -I tools/qualify_required_notify.py
+      - name: Retain complete fixture evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: required-notify-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            qualification-evidence.tar.gz
+            qualification-evidence.sha256
+          if-no-files-found: error
+          retention-days: 7
+          overwrite: false
