@@ -66,7 +66,9 @@ prepare() {
   return 1
  fi
  printf '%s\n' 'pre_node_modules=PASS_absent' >> "$STATUS"
- env -i PATH="$PATH" HOME="$WORK/home" MONGOMS_DISABLE_POSTINSTALL=1 npm_config_cache="$WORK/cache" npm_config_userconfig=/dev/null npm_config_globalconfig=/dev/null npm_config_registry=https://registry.npmjs.org npm install --package-lock-only --ignore-scripts --save-exact --no-audit --no-fund mongodb@7.8.0 > "$OUT/resolver.log" 2>&1
+ : > "$WORK/user.npmrc" || return 1
+ : > "$WORK/global.npmrc" || return 1
+ env -i PATH="$PATH" HOME="$WORK/home" MONGOMS_DISABLE_POSTINSTALL=1 npm_config_cache="$WORK/cache" npm_config_userconfig="$WORK/user.npmrc" npm_config_globalconfig="$WORK/global.npmrc" npm_config_registry=https://registry.npmjs.org npm install --package-lock-only --ignore-scripts --save-exact --no-audit --no-fund mongodb@7.8.0 > "$OUT/resolver.log" 2>&1
  RC=$?
  printf '%s\n' "$RC" > "$OUT/resolver-exit.txt"
  printf 'resolver_rc=%s\n' "$RC" >> "$STATUS"
