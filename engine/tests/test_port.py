@@ -3,6 +3,8 @@ from unittest import mock
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import notifier, snapshot_codec
 
+NODE_BINARY = "/usr/bin/node"  # Qualification runner supplies its admitted realpath.
+
 FAKE_AGE = os.path.join(os.path.dirname(__file__), "fake_age")
 
 
@@ -186,21 +188,21 @@ class CliTest(unittest.TestCase):
         cfg = {
             "id": "docs_watch_telegram_api",
             "adapter": "command",
-            "target": f"/usr/bin/node {mock_runner} coreTelegramOrg",
+            "target": f"{NODE_BINARY} {mock_runner} coreTelegramOrg",
             "normalize": [],
             "notify": "",
             "codec": "plain",
             "public": True
         }
-        if os.path.exists("/usr/bin/node"):
-            code, stdout = self._run_captured(cfg)
-            self.assertEqual(code, 0)
-            self.assertEqual(stdout, "stored\n")
-            snap_file = os.path.join(self.tmp, "snap", "docs_watch_telegram_api.snap")
-            self.assertTrue(os.path.isfile(snap_file))
-            with open(snap_file, "r", encoding="utf-8") as f:
-                content = f.read()
-            self.assertEqual(content, "Telegram Bot API Mock Docs")
+        self.assertTrue(os.path.isfile(NODE_BINARY) and os.access(NODE_BINARY, os.X_OK), "admitted Node must be executable")
+        code, stdout = self._run_captured(cfg)
+        self.assertEqual(code, 0)
+        self.assertEqual(stdout, "stored\n")
+        snap_file = os.path.join(self.tmp, "snap", "docs_watch_telegram_api.snap")
+        self.assertTrue(os.path.isfile(snap_file))
+        with open(snap_file, "r", encoding="utf-8") as f:
+            content = f.read()
+        self.assertEqual(content, "Telegram Bot API Mock Docs")
 
     def test_cli_snapshot_only_persists_snapshot_and_reports_snapshot_changed(self):
         self._live("v1")

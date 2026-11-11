@@ -56,7 +56,7 @@ jobs:
                   receipt['failure'] = 'identity'; save(); raise SystemExit(1)
               checks = [check('diff-check',['git','diff','--check']),
                         check('tracked-clean',['git','status','--porcelain','--untracked-files=no'], '')]
-              for name, path in [('fake-age','engine/tests/fake_age'), ('node','/usr/bin/node')]:
+              for name, path in [('fake-age','engine/tests/fake_age')]:
                   p = pathlib.Path(path)
                   exists = p.is_file()
                   mode = stat.S_IMODE(p.stat().st_mode) if exists else None
@@ -71,10 +71,34 @@ jobs:
               receipt['interpreters'] = {'python3':shutil.which('python3'), 'node':shutil.which('node')}
               save()
               checks.append(check('python-version',[sys.executable,'--version']))
-              if pathlib.Path('/usr/bin/node').is_file() and os.access('/usr/bin/node',os.X_OK):
-                  checks.append(check('node-version',['/usr/bin/node','--version']))
-              else:
-                  checks.append(False)
+              # Admit only the measured existing PATH candidate, never install or alias it.
+              candidate = shutil.which('node')
+              node = {'candidate':candidate, 'expected_candidate':'/usr/local/bin/node', 'accepted':False}
+              receipt['node_admission'] = node; save()
+              node_ok = candidate == '/usr/local/bin/node'
+              try:
+                  if node_ok:
+                      resolved = pathlib.Path(candidate).resolve(strict=True)
+                      before = resolved.stat()
+                      node.update({'realpath':str(resolved), 'mode':oct(stat.S_IMODE(before.st_mode)),
+                                   'device':before.st_dev, 'inode':before.st_ino, 'bytes':before.st_size,
+                                   'mtime_ns':before.st_mtime_ns,
+                                   'sha256':hashlib.sha256(resolved.read_bytes()).hexdigest()})
+                      node_ok = stat.S_ISREG(before.st_mode) and os.access(resolved,os.X_OK) and not any(c.isspace() for c in str(resolved))
+                      save()
+                      if node_ok:
+                          node_ok = check('node-version',[str(resolved),'--version'])
+                          version = receipt['checks'][-1]['observed']
+                          after = resolved.stat()
+                          node_ok = node_ok and version.startswith('v') and all(getattr(before,k) == getattr(after,k) for k in ('st_dev','st_ino','st_mode','st_size','st_mtime_ns'))
+                          node.update({'version':version, 'accepted':node_ok})
+              except (OSError, ValueError) as exc:
+                  node_ok = False
+                  node['failure'] = 'node-admission:'+type(exc).__name__
+              node['accepted'] = node_ok
+              receipt['checks'].append({'name':'node-admission', 'expected':'existing /usr/local/bin/node, stable regular executable realpath/hash/version',
+                                        'observed':node, 'rc':0 if node_ok else 1, 'accepted':node_ok})
+              checks.append(node_ok); save()
               receipt['accepted'] = all(checks)
               receipt['terminal_rc'] = 0 if all(checks) else 1
               receipt['failure'] = None if all(checks) else 'named-prerequisite'

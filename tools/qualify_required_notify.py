@@ -14,7 +14,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 os.chdir(ROOT)
-EXPECTED = {'adapters/cli.js': '7b6dc9244f724280394c0de789e1d946ead89b547dcdb61ff07003e47ed0bf4f', 'adapters/coreTelegramOrg.js': 'c9fa4f924688ead40e27a2babd014d1e17679bf9ea415a55e3edaf7d87a8981a', 'adapters/githubReleaseFeed.js': '21a9be07978f239290f285cf69f68d08b207ff454e0d1376e4f874ff1d19673d', 'adapters/utils.js': 'ce6f05f35d779882caef1076ef93394dba2e224269528b90055f4eff38848957', 'engine/README.md': '2036c549c6c4df9dec294f77395bd87d617e2f0fcef7ec8327394576eda0f2a8', 'engine/engine.py': '9c56a55074aafaee9874c96ea01564d5b368e6689361b306e073c70b657bd10e', 'engine/notifier.py': 'e96e339875c876daca3d247aab3ff06f234ac94601ba58c50b24c104438c1a57', 'engine/run_slot_cli.py': 'cf9eda3fd20f452688f0bd90ecd02089b9910930873e38793926ac10ccdd43c9', 'engine/snapshot_codec.py': 'fc4595babd88e4b8f0979023ca3beacb6341c36ce3240ab862f2dad8d5f12a62', 'engine/tests/fake_age': 'da487d84e40a8fff60fc225f4b254482b30ada5372806004d8ad60487a2da608', 'engine/tests/test_engine.py': 'ba2b2b0fe1cd1bdb673baa9a1018b9e3c6f070076474549d14d5ac41566d1c15', 'engine/tests/test_port.py': '88850f9ee8dae090f27f70fd40749106b03e19cfa54d0f3074f340811541df60'}
+EXPECTED = {'adapters/cli.js': '7b6dc9244f724280394c0de789e1d946ead89b547dcdb61ff07003e47ed0bf4f', 'adapters/coreTelegramOrg.js': 'c9fa4f924688ead40e27a2babd014d1e17679bf9ea415a55e3edaf7d87a8981a', 'adapters/githubReleaseFeed.js': '21a9be07978f239290f285cf69f68d08b207ff454e0d1376e4f874ff1d19673d', 'adapters/utils.js': 'ce6f05f35d779882caef1076ef93394dba2e224269528b90055f4eff38848957', 'engine/README.md': '2036c549c6c4df9dec294f77395bd87d617e2f0fcef7ec8327394576eda0f2a8', 'engine/engine.py': '9c56a55074aafaee9874c96ea01564d5b368e6689361b306e073c70b657bd10e', 'engine/notifier.py': 'e96e339875c876daca3d247aab3ff06f234ac94601ba58c50b24c104438c1a57', 'engine/run_slot_cli.py': 'cf9eda3fd20f452688f0bd90ecd02089b9910930873e38793926ac10ccdd43c9', 'engine/snapshot_codec.py': 'fc4595babd88e4b8f0979023ca3beacb6341c36ce3240ab862f2dad8d5f12a62', 'engine/tests/fake_age': 'da487d84e40a8fff60fc225f4b254482b30ada5372806004d8ad60487a2da608', 'engine/tests/test_engine.py': 'ba2b2b0fe1cd1bdb673baa9a1018b9e3c6f070076474549d14d5ac41566d1c15', 'engine/tests/test_port.py': '4dfa8cc15ee5c9cd78d8d451b4f7e0475777357ec44c58f9c3911e4b9eb46b44'}
 REPORT = ROOT / "qualification-results"
 REPORT.mkdir(exist_ok=True)
 import contextlib
@@ -32,6 +32,40 @@ def check_sources():
     return {"expected": expected, "actual": actual,
             "equal": all(actual.get(name) == digest for name, digest in expected.items())}
 
+
+NODE_INVOCATIONS = []
+NODE_ADMISSION = None
+
+def admitted_node():
+    global NODE_ADMISSION
+    receipt = json.loads((ROOT / 'qualification-prerequisites/receipt.json').read_text())
+    node = receipt.get('node_admission', {})
+    NODE_ADMISSION = node
+    (REPORT / 'node-admission.json').write_text(json.dumps(node, indent=2) + '\n')
+    head = subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip()
+    if (receipt.get('accepted') is not True or receipt.get('terminal_rc') != 0
+        or receipt.get('expected_head') != head
+        or any(receipt.get(key) != os.environ.get(env) for key, env in
+               [('run_id','QUALIFY_RUN_ID'),('attempt','QUALIFY_RUN_ATTEMPT'),('job','QUALIFY_JOB')])
+        or node.get('candidate') != '/usr/local/bin/node' or node.get('accepted') is not True):
+        raise RuntimeError('node-admission receipt identity mismatch')
+    verify_node(node)
+    return node
+
+def verify_node(node):
+    path = Path(node['realpath'])
+    st = path.stat()
+    actual = {'realpath':str(path.resolve(strict=True)), 'mode':oct(st.st_mode & 0o7777),
+              'device':st.st_dev, 'inode':st.st_ino, 'bytes':st.st_size, 'mtime_ns':st.st_mtime_ns,
+              'sha256':hashlib.sha256(path.read_bytes()).hexdigest()}
+    if (not path.is_file() or not os.access(path, os.X_OK)
+        or any(actual[key] != node.get(key) for key in actual)):
+        raise RuntimeError('node-admission binary identity mismatch')
+    version = subprocess.check_output([str(path),'--version'], text=True).strip()
+    if version != node.get('version'):
+        raise RuntimeError('node-admission version mismatch')
+    return str(path)
+
 def run_fixtures():
     # Prevent Python transports, including direct socket use. Fake urllib openers
     # in the tests remain callable. Child Node is separately guarded below.
@@ -42,8 +76,8 @@ def run_fixtures():
     socket.create_connection = denied
     socket.getaddrinfo = denied
 
-    if not os.access("/usr/bin/node", os.X_OK):
-        raise SystemExit("required adapter case would silently skip: /usr/bin/node missing")
+    node = admitted_node()
+    node_path = node["realpath"]
     if not os.access(ROOT / "engine/tests/fake_age", os.X_OK):
         raise SystemExit("fake_age executable git mode missing")
 
@@ -64,12 +98,16 @@ def run_fixtures():
         def guarded_popen(*args, **kwargs):
             env = kwargs.get("env")
             command = args[0] if args else kwargs.get("args")
-            if env == {} and isinstance(command, (list, tuple)) and command and command[0] == "/usr/bin/node":
+            if env == {} and isinstance(command, (list, tuple)) and command and command[0] == node_path:
+                verify_node(node)
+                NODE_INVOCATIONS.append({"realpath":node_path, "sha256":node["sha256"], "version":node["version"], "preload":True})
                 kwargs["env"] = {"NODE_OPTIONS": "--require=" + str(guard)}
             return original_popen(*args, **kwargs)
         subprocess.Popen = guarded_popen
         sys.path.insert(0, str(ROOT / "engine"))
         sys.path.insert(0, str(ROOT / "engine/tests"))
+        import test_port
+        test_port.NODE_BINARY = node_path
         suite = unittest.defaultTestLoader.loadTestsFromNames(["test_engine", "test_port"])
         def leaves(item):
             for child in item:
@@ -103,9 +141,12 @@ def run_fixtures():
                   "run": result.testsRun, "failures": len(result.failures),
                   "errors": len(result.errors), "skips": len(result.skipped),
                   "source_hashes": source_hashes, "python": sys.version,
-                  "node": subprocess.check_output(["/usr/bin/node", "--version"], text=True).strip()}
+                  "node": node, "node_invocations": NODE_INVOCATIONS}
         (REPORT / "result.json").write_text(json.dumps(report, indent=2) + "\n")
         print(json.dumps(report, sort_keys=True))
+        verify_node(node)
+        if len(NODE_INVOCATIONS) != 1:
+            raise RuntimeError("expected exactly one admitted Node fixture invocation")
         if not result.wasSuccessful() or result.skipped or result.testsRun != 64:
             raise SystemExit(1)
 
@@ -124,7 +165,10 @@ except BaseException as exc:
     if phase_rc == 0:
         phase_rc = 1
     log.write("qualification stopped: " + type(exc).__name__ + "\n")
+    if isinstance(exc, RuntimeError) and str(exc).startswith(("node-admission", "expected exactly one admitted Node")):
+        (REPORT / "node-nonpass.json").write_text(json.dumps({"phase":"node-admission-or-invocation", "qualification_pass":False, "terminal_rc":phase_rc, "reason":str(exc)}, indent=2) + "\n")
 finally:
+    (REPORT / "node-invocations.json").write_text(json.dumps(NODE_INVOCATIONS, indent=2) + "\n")
     post = check_sources()
     (REPORT / "source-post.json").write_text(json.dumps(post, indent=2) + "\n")
     (REPORT / "tests.log").write_text(log.getvalue())
