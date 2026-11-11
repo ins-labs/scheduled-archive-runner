@@ -18,6 +18,14 @@ run_checks() {
  grep -q '^VERSION_ID="24.04"$' /etc/os-release || return 1
  [ "$(node --version)" = v22.23.4 ] || return 1
  [ "$(npm --version)" = 10.9.9 ] || return 1
+ # Capture only the allowlisted public tooling-wrapper lock before strict hash admission.
+ [ -f "$SOURCE/package-lock.json" ] && [ ! -L "$SOURCE/package-lock.json" ] || return 1
+ [ "$(wc -c < "$SOURCE/package-lock.json")" -le 16384 ] || return 1
+ printf '%s\n' BEGIN_WRAPPER_LOCK_DIAGNOSTIC
+ sha256sum "$SOURCE/package-lock.json" || return 1
+ wc -c < "$SOURCE/package-lock.json" || return 1
+ base64 "$SOURCE/package-lock.json" || return 1
+ printf '%s\n' END_WRAPPER_LOCK_DIAGNOSTIC
  (cd "$SOURCE" && sha256sum -c SOURCE-SHA256SUMS) || return 1
  cp -R "$SOURCE/candidate" "$WORK/job/" || return 1
  cp "$SOURCE/"*-fixture.cjs "$WORK/job/" || return 1
