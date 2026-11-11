@@ -1,12 +1,25 @@
 """Generic LLM-free diff engine for scheduled watch slots. Stdlib only. No names, no secrets in this file or in configs.
 
-run_slot(cfg, state_dir, fetch, notify) -> 'stored' | 'unchanged' | 'changed' | 'fetch_failed' | 'notify_failed' | 'bad_config' | 'error'
+run_slot(cfg, state_dir, fetch, notify) -> 'stored' | 'unchanged' | 'changed' | 'snapshot_changed' | 'fetch_failed' | 'notify_failed' | 'bad_config' | 'error'
 Never raises. Notifications carry the slot id and a short hash only, never the content."""
 import hashlib, json, os, re, select, signal, subprocess, tempfile, time, urllib.parse, urllib.request
 
 ADAPTERS = ("http-get", "command")
+MODES = ("SNAPSHOT_ONLY", "REQUIRED_NOTIFY")
 SLOT_ID = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 MAX_BYTES = 5 * 1024 * 1024
+
+
+class ValidateResult(tuple):
+    """3-tuple (sid, rules, mode) preserving indexing compatibility for sid (index 0) and rules (index 1)."""
+    def __new__(cls, sid, rules, mode):
+        return super().__new__(cls, (sid, rules, mode))
+    @property
+    def sid(self): return self[0]
+    @property
+    def rules(self): return self[1]
+    @property
+    def mode(self): return self[2]
 
 
 class HTTPSOnlyRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -28,9 +41,15 @@ class HTTPSOnlyRedirectHandler(urllib.request.HTTPRedirectHandler):
 
 
 def validate(cfg):
-    """Returns (slot_id, compiled normalize rules) or raises ValueError."""
+    """Returns ValidateResult(slot_id, compiled normalize rules, mode) or raises ValueError."""
     if not isinstance(cfg, dict) or not SLOT_ID.match(str(cfg.get("id", ""))) or str(cfg["id"]).startswith("."):
         raise ValueError("id")
+    if "mode" not in cfg:
+        mode = "SNAPSHOT_ONLY"
+    else:
+        mode = cfg["mode"]
+        if mode not in MODES:
+            raise ValueError("mode")
     adapter = cfg.get("adapter")
     if adapter not in ADAPTERS or not isinstance(cfg.get("target"), str) or not cfg["target"]:
         raise ValueError("adapter")
@@ -46,7 +65,7 @@ def validate(cfg):
     rules = cfg.get("normalize", [])
     if not isinstance(rules, list) or len(rules) > 50:
         raise ValueError("normalize")
-    return cfg["id"], [re.compile(r) for r in rules]
+    return ValidateResult(cfg["id"], [re.compile(r) for r in rules], mode)
 
 
 def default_fetch(cfg, timeout=60):
@@ -153,7 +172,7 @@ def _write(path, data):
 
 def run_slot(cfg, state_dir, fetch=default_fetch, notify=None):
     try:
-        sid, rules = validate(cfg)
+        sid, rules, mode = validate(cfg)
     except (ValueError, re.error, KeyError, TypeError):
         return "bad_config"
 
@@ -174,9 +193,15 @@ def run_slot(cfg, state_dir, fetch=default_fetch, notify=None):
             raise ValueError("empty response")
     except Exception:
         if _read(fail) is None:                      # report once per transition
-            if notify:
-                if not notify(cfg.get("notify", ""), "watch %s: fetch failed" % sid):
+            if mode == "REQUIRED_NOTIFY":
+                sink = cfg.get("notify", "")
+                if not (notify and notify(sink, "watch %s: fetch failed" % sid)):
                     return "notify_failed"
+                try:
+                    _write(fail, "1")
+                except Exception:
+                    return "error"
+            else:
                 try:
                     _write(fail, "1")
                 except Exception:
@@ -200,8 +225,16 @@ def run_slot(cfg, state_dir, fetch=default_fetch, notify=None):
     if old == cur:
         return "unchanged"
 
+    if mode == "SNAPSHOT_ONLY":
+        try:
+            _write(snap, cur)
+        except Exception:
+            return "error"
+        return "snapshot_changed"
+
     h = lambda t: hashlib.sha256(t.encode()).hexdigest()[:10]
-    if not (notify and notify(cfg.get("notify", ""), "watch %s: changed %s -> %s" % (sid, h(old), h(cur)))):
+    sink = cfg.get("notify", "")
+    if not (notify and notify(sink, "watch %s: changed %s -> %s" % (sid, h(old), h(cur)))):
         return "notify_failed"                        # snapshot untouched: retried next run, not lost
 
     try:
